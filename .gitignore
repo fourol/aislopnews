@@ -1,0 +1,29 @@
+# Environment & secrets
+.env
+*.env
+!.env.example
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Local data & charts
+data/
+*.db
+*.sqlite3
+data/charts/*.png
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,31 @@
+settings:
+  schedule_hours: 12      # Периодичность проверки (в часах)
+  max_items_per_run: 25   # Максимум материалов в одном дайджесте
+
+sources:
+  # 1. RSS каналы новостей и блогов конкурентов
+  - name: "Хабр: Искусственный Интеллект"
+    type: "rss"
+    url: "https://habr.com/ru/rss/hub/artificial_intelligence/all/?fl=ru"
+    category: "tech_news"
+    competitor: "Habr AI"
+
+  - name: "OpenAI Blog Feed"
+    type: "rss"
+    url: "https://openai.com/news/rss.xml"
+    category: "ai_releases"
+    competitor: "OpenAI"
+
+  # 2. Публичные Telegram-каналы (парсинг без сессии через t.me/s/)
+  - name: "Telegram: Durov Channel"
+    type: "telegram"
+    url: "durov"
+    category: "messengers"
+    competitor: "Telegram"
+
+  # 3. Веб-страницы (блоги / чейнджлоги / пресс-релизы)
+  - name: "Anthropic News"
+    type: "web"
+    url: "https://www.anthropic.com/news"
+    category: "ai_releases"
+    competitor: "Anthropic"
