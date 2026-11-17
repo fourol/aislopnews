@@ -1,31 +1,56 @@
 settings:
-  schedule_hours: 12      # Периодичность проверки (в часах)
-  max_items_per_run: 25   # Максимум материалов в одном дайджесте
+  schedule_hours: 6       # Проверка каждые 6 часов
+  max_items_per_run: 30   # Лимит материалов для анализа
 
 sources:
-  # 1. RSS каналы новостей и блогов конкурентов
+  # 1. Сфера ИИ (Искусственный интеллект, нейросети, инструменты)
   - name: "Хабр: Искусственный Интеллект"
     type: "rss"
     url: "https://habr.com/ru/rss/hub/artificial_intelligence/all/?fl=ru"
-    category: "tech_news"
-    competitor: "Habr AI"
+    category: "AI"
+    competitor: "AI Community"
 
-  - name: "OpenAI Blog Feed"
-    type: "rss"
-    url: "https://openai.com/news/rss.xml"
-    category: "ai_releases"
-    competitor: "OpenAI"
-
-  # 2. Публичные Telegram-каналы (парсинг без сессии через t.me/s/)
-  - name: "Telegram: Durov Channel"
+  # 2. Telegram, TON, NFT и Web3 экосистема
+  - name: "Durov Channel"
     type: "telegram"
     url: "durov"
-    category: "messengers"
+    category: "Telegram & TON"
     competitor: "Telegram"
 
-  # 3. Веб-страницы (блоги / чейнджлоги / пресс-релизы)
-  - name: "Anthropic News"
-    type: "web"
-    url: "https://www.anthropic.com/news"
-    category: "ai_releases"
-    competitor: "Anthropic"
+  - name: "TG Info (Новости Telegram)"
+    type: "telegram"
+    url: "tginfo"
+    category: "Telegram Updates"
+    competitor: "Telegram"
+
+  - name: "TON Community (NFT / Web3 / Stars)"
+    type: "telegram"
+    url: "toncoin"
+    category: "NFT & Web3"
+    competitor: "TON Ecosystem"
+
+  # 3. Глобальные технологии, IT и гаджеты
+  - name: "Exploit (Технологии и ИИ)"
+    type: "telegram"
+    url: "exploitex"
+    category: "Tech & AI"
+    competitor: "Global Tech"
+
+  - name: "3DNews: Технологии и железо"
+    type: "rss"
+    url: "https://3dnews.ru/news/rss/"
+    category: "Global Tech"
+    competitor: "Tech News"
+
+  # 4. Игровая индустрия и гейминг
+  - name: "StopGame: Новости игр"
+    type: "rss"
+    url: "https://stopgame.ru/rss/rss_news.xml"
+    category: "Gaming"
+    competitor: "Gaming Industry"
+
+  - name: "Хабр: Разработка игр и геймдев"
+    type: "rss"
+    url: "https://habr.com/ru/rss/hub/gamedev/all/?fl=ru"
+    category: "Gaming"
+    competitor: "Gamedev"

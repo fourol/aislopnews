@@ -35,9 +35,9 @@ class ChartGenerator:
         accent_palette = ["#89b4fa", "#a6e3a1", "#fab387", "#f38ba8", "#cba6f7", "#94e2d5"]
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5), facecolor=bg_color)
-        fig.suptitle("Рыночный срез и активность конкурентов", fontsize=15, color=text_color, fontweight="bold", y=0.98)
+        fig.suptitle("Аналитический срез: ИИ, Web3, Игры и Технологии", fontsize=15, color=text_color, fontweight="bold", y=0.98)
 
-        # Panel 1: Topics Distribution (Donut or Horizontal Bar)
+        # Panel 1: Topics Distribution
         ax1.set_facecolor(card_color)
         if topic_counts:
             topics = list(topic_counts.keys())
@@ -45,7 +45,7 @@ class ChartGenerator:
             colors = [accent_palette[i % len(accent_palette)] for i in range(len(topics))]
 
             bars = ax1.barh(topics, counts, color=colors, height=0.6)
-            ax1.set_title("Распределение по направлениям", color=text_color, fontsize=12, pad=10)
+            ax1.set_title("Тематика событий", color=text_color, fontsize=12, pad=10)
             ax1.tick_params(colors=text_color, labelsize=10)
             ax1.invert_yaxis()  # Top down
             for spine in ax1.spines.values():
@@ -61,7 +61,7 @@ class ChartGenerator:
             ax1.text(0.5, 0.5, "Нет данных по направлениям", color=text_color, ha="center", va="center")
             ax1.axis("off")
 
-        # Panel 2: Competitor mentions
+        # Panel 2: Competitor/Source mentions
         ax2.set_facecolor(card_color)
         if competitor_counts:
             comps = list(competitor_counts.keys())
@@ -69,7 +69,7 @@ class ChartGenerator:
             c_colors = [accent_palette[(i + 2) % len(accent_palette)] for i in range(len(comps))]
 
             bars = ax2.barh(comps, c_counts, color=c_colors, height=0.6)
-            ax2.set_title("Активность источников / конкурентов", color=text_color, fontsize=12, pad=10)
+            ax2.set_title("Активность источников и платформ", color=text_color, fontsize=12, pad=10)
             ax2.tick_params(colors=text_color, labelsize=10)
             ax2.invert_yaxis()
             for spine in ax2.spines.values():

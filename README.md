@@ -1,6 +1,6 @@
-# 🕵️ Market & Competitor Intelligence Agent (Telegram Edition)
+# 🌐 Tech, AI, Web3 & Gaming Intelligence Agent (Telegram Edition)
 
-Автономный ИИ-агент для непрерывного мониторинга рынка, конкурентов и новостей с синтезом инсайтов через LLM, генерацией аналитических графиков и автоматической публикацией дайджестов в Telegram-канал.
+Автономный ИИ-агент для непрерывного мониторинга сферы **ИИ (AI), NFT / Web3 / TON, экосистемы Telegram, глобальных технологий и игровой индустрии (гейминг)**. Автоматически отфильтровывает политику, анализирует ключевые события через LLM, генерирует аналитические графики и публикует готовые дайджесты в Telegram-канал.
 
 ---
 
@@ -136,9 +136,3 @@ sources:
 * [src/analyzer.py](file:///home/deck/Documents/ai/src/analyzer.py) — ИИ-модуль синтеза и выделения инсайтов.
 * [src/charts.py](file:///home/deck/Documents/ai/src/charts.py) — Генератор графиков в тёмной теме.
 * [src/telegram_bot.py](file:///home/deck/Documents/ai/src/telegram_bot.py) — Модуль отправки в Telegram.
-
----
-
-## 📄 Лицензия
-
-Проект распространяется под свободной лицензией [GNU General Public License v3.0 (GPL-3.0)](file:///home/deck/Documents/ai/LICENSE).
