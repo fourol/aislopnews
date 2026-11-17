@@ -43,9 +43,9 @@ sources:
     competitor: "Tech News"
 
   # 4. Игровая индустрия и гейминг
-  - name: "StopGame: Новости игр"
-    type: "rss"
-    url: "https://stopgame.ru/rss/rss_news.xml"
+  - name: "Игромания (Игры и индустрия)"
+    type: "telegram"
+    url: "igromania"
     category: "Gaming"
     competitor: "Gaming Industry"
 
