@@ -1,138 +1,207 @@
-# 🌐 Tech, AI, Web3 & Gaming Intelligence Agent (Telegram Edition)
+# 🤖 AI Slop News (`aislopnews`) v1.0.0
 
-Автономный ИИ-агент для непрерывного мониторинга сферы **ИИ (AI), NFT / Web3 / TON, экосистемы Telegram, глобальных технологий и игровой индустрии (гейминг)**. Автоматически отфильтровывает политику, анализирует ключевые события через LLM, генерирует аналитические графики и публикует готовые дайджесты в Telegram-канал.
+Автономный мультиплатформенный ИИ-новостник и аналитический агент для Telegram-каналов с современной веб-панелью управления. 
 
----
-
-## 🏗 Архитектура решения
-
-```
-┌────────────────────────────────┐
-│  Источники данных              │
-│  - RSS / Atom ленты новостей   │
-│  - Telegram-каналы (t.me/s/..) │
-│  - Веб-страницы / блоги        │
-└───────────────┬────────────────┘
-                │
-                ▼
-┌────────────────────────────────┐
-│  Слой хранения (SQLite)        │
-│  - Хеширование URL/заголовков  │
-│  - Дедупликация (без повторов) │
-└───────────────┬────────────────┘
-                │
-                ▼
-┌────────────────────────────────┐
-│  LLM Аналитик (OpenAI-compat)  │
-│  - Выжимка сути (без воды)     │
-│  - Кластеризация по темам      │
-│  - Оценка влияния и инсайты    │
-└───────────────┬────────────────┘
-                │
-                ▼
-┌────────────────────────────────┐
-│  Генератор графиков            │
-│  - Стильный dark-mode чарт     │
-│  - Распределение по темам      │
-│  - Активность конкурентов      │
-└───────────────┬────────────────┘
-                │
-                ▼
-┌────────────────────────────────┐
-│  Публикатор в Telegram         │
-│  - Фото графика + дайджест     │
-│  - Готово для команды/руковод- │
-│    ства в вашем ТГ-канале      │
-└────────────────────────────────┘
-```
+Агент в реальном времени мониторит новости технологий, искусственного интеллекта, видеоигр, экосистемы Telegram и Web3/NFT, отфильтровывает политику, анализирует материал через LLM, подбирает визуальное оформление (оригинальные фото из каналов или арт) и публикует стильные, живые посты единым сообщением под фотографией.
 
 ---
 
-## 🚀 Быстрый старт
+## 🌟 Ключевые возможности
 
-### 1. Настройка окружения
-В проекте уже создано виртуальное окружение `.venv` и установлены все необходимые библиотеки:
+* **Живой авторский стиль публикации**: Никаких роботизированных скучных шаблонов. Посты пишутся легким языком в стиле топовых техно-каналов (The Verge, Код Дурова, Rozetked).
+* **Единый пост с фото (Single Message Delivery)**: Текст гарантированно умещается в лимит подписи к фотографии в Telegram (до 1024 символов) с чистым разделением абзацев пустыми строками (`\n\n`).
+* **Умный сбор графики (Image Pipeline)**:
+  1. Автоматическое скачивание оригинальных фото высокого разрешения из постов Telegram-каналов (`cdn4.telesco.pe`).
+  2. Интеллектуальный поиск иллюстраций в Wikimedia Commons при отсутствии фото в источнике.
+  3. Автоматическая генерация минималистичной dark-mode обложки карточки при необходимости.
+* **Строгая фильтрация политики**: Полный запрет на военные сводки, чиновников, геополитику, санкции и пропаганду — только чистые технологии, геймдев, ИИ и Web3.
+* **Современная веб-панель управления (FastAPI + Tailwind CSS)**:
+  - Мгновенная публикация по кнопке *(«🚀 Опубликовать сейчас»)*.
+  - Управление источниками (Telegram, RSS, Web) без ручного редактирования конфигов.
+  - Настройка таймингов и интервала автопостинга.
+  - Журнал последних собранных материалов и статус фоновых сервисов.
+  - Защита сессий администратора по паролю.
+* **Надежное хранилище (SQLite + SHA-256)**: Исключает любые повторные публикации одних и тех же новостей.
+* **Полная совместимость с LLM**: Поддержка OpenRouter, OpenAI, Groq, DeepSeek и любых OpenAI-compatible API.
+
+---
+
+## 🏗 Архитектура
+
+```
+┌──────────────────────────────────────┐
+│          Источники данных            │
+│  • Публичные каналы Telegram         │
+│  • RSS / Atom ленты                  │
+│  • Веб-страницы и блоги              │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────┐
+│    Слой хранения (SQLite / SHA-256)   │
+│  • Защита от дублей новостей         │
+│  • Хранение URL оригинальных фото    │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────┐
+│         LLM Редактор (OpenRouter)    │
+│  • Выбор ключевого инфоповода        │
+│  • Фильтрация политики               │
+│  • Верстка с красивыми абзацами      │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────┐
+│        Менеджер изображений          │
+│  • Загрузка из Telegram CDN          │
+│  • Поиск в сети / Генерация обложки  │
+└──────────────────┬───────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────┐
+│         Публикация в Telegram        │
+│  • sendPhoto с полным текстом        │
+│  • Канал: @your_channel              │
+└──────────────────────────────────────┘
+                   ▲
+                   │ Управление через
+┌──────────────────┴───────────────────┐
+│        Веб-панель (FastAPI)          │
+│  • HTTPS (Let's Encrypt / Nginx)     │
+│  • Кнопка ручного запуска            │
+│  • Статистика и источники            │
+└──────────────────────────────────────┘
+```
+
+---
+
+## 🚀 Быстрый запуск
+
+### 1. Клонирование и установка зависимостей
 ```bash
+git clone https://github.com/fourol/aislopnews.git
+cd aislopnews
+
+python3 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### 2. Настройка переменных окружения (`.env`)
-Скопируйте пример или отредактируйте созданный `.env`:
+### 2. Конфигурация `.env`
+Создайте файл `.env`:
 ```env
-# Telegram:
-TELEGRAM_BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-TELEGRAM_CHANNEL_ID="@your_channel_name"   # или -100xxxxxxxxxx
+# Telegram Bot
+TELEGRAM_BOT_TOKEN="your_bot_token_here"
+TELEGRAM_CHANNEL_ID="@your_channel_name"
 
-# LLM:
-LLM_API_KEY="sk-..."                       # Ключ OpenAI, OpenRouter, DeepSeek или Groq
-LLM_BASE_URL="https://api.openai.com/v1"   # или https://api.deepseek.com / https://openrouter.ai/api/v1
-LLM_MODEL="gpt-4o-mini"                    # или deepseek-chat, mistralai/mistral-large
+# LLM API (OpenRouter / OpenAI)
+LLM_API_KEY="sk-or-v1-..."
+LLM_BASE_URL="https://openrouter.ai/api/v1"
+LLM_MODEL="openai/gpt-4o-mini"
+
+# Admin Web Panel
+ADMIN_PASSWORD="your_secure_password"
 ```
-
-> **Важно по Telegram:**
-> 1. Создайте бота через [@BotFather](https://t.me/BotFather) и скопируйте токен.
-> 2. Создайте канал и **добавьте созданного бота в администраторы канала** с правом публикации сообщений.
 
 ### 3. Настройка источников (`config.yaml`)
-В [config.yaml](file:///home/deck/Documents/ai/config.yaml) настраиваются цели для мониторинга:
 ```yaml
 settings:
-  schedule_hours: 12      # Периодичность проверки
-  max_items_per_run: 25   # Лимит материалов на один дайджест
+  schedule_hours: 2
+  max_items_per_run: 25
 
 sources:
-  - name: "Новости технологий"
-    type: "rss"
-    url: "https://..."
-    competitor: "Конкурент 1"
-
-  # Мониторинг публичных Telegram-каналов (без сессий и риска банов)
-  - name: "Канал конкурента"
+  - name: "Lalyou NFT & Web3"
     type: "telegram"
-    url: "durov"          # юзернейм канала (без @)
-    competitor: "Telegram"
+    url: "lalyounft"
 
-  # Мониторинг блогов или страниц релизов
-  - name: "Блог конкурента"
-    type: "web"
-    url: "https://competitor.com/blog"
-    competitor: "Competitor B"
+  - name: "Geodema News"
+    type: "telegram"
+    url: "GeodemaNews"
+
+  - name: "TG Info"
+    type: "telegram"
+    url: "tginfo"
+
+  - name: "Хабр: ИИ"
+    type: "rss"
+    url: "https://habr.com/ru/rss/hub/artificial_intelligence/all/?fl=ru"
 ```
 
 ---
 
-## 🛠 Запуск агента
+## 💻 Режимы запуска
 
-1. **Проверка подключения к Telegram:**
-   Отправляет тестовое приветствие в ваш канал:
-   ```bash
-   .venv/bin/python main.py --test-tg
-   ```
+```bash
+# Тестовый прогон (вывод поста и фото в консоль без отправки в канал):
+python main.py --dry-run
 
-2. **Тестовый сбор без отправки в канал (Dry-Run):**
-   Собирает данные, анализирует через ИИ, строит график и выводит дайджест прямо в терминал:
-   ```bash
-   .venv/bin/python main.py --dry-run
-   ```
+# Одиночный сбор и отправка в канал:
+python main.py --run-once
 
-3. **Одиночный боевой запуск:**
-   Собирает новые материалы, генерирует пост с графиком и отправляет в канал:
-   ```bash
-   .venv/bin/python main.py --run-once
-   ```
+# Запуск фонового планировщика:
+python main.py --schedule
 
-4. **Запуск в режиме демона (фоновый сервис):**
-   Работает непрерывно по расписанию из `config.yaml`:
-   ```bash
-   nohup .venv/bin/python main.py --schedule > agent.log 2>&1 &
-   ```
+# Запуск веб-панели управления:
+uvicorn panel:app --host 0.0.0.0 --port 8888
+```
 
 ---
 
-## 📊 Структура проекта
-* [main.py](file:///home/deck/Documents/ai/main.py) — Главная точка входа и CLI интерфейс.
-* [src/collectors/](file:///home/deck/Documents/ai/src/collectors/) — Модули сбора (RSS, Web scraper, Telegram preview).
-* [src/storage.py](file:///home/deck/Documents/ai/src/storage.py) — База данных SQLite с защитой от дублирования.
-* [src/analyzer.py](file:///home/deck/Documents/ai/src/analyzer.py) — ИИ-модуль синтеза и выделения инсайтов.
-* [src/charts.py](file:///home/deck/Documents/ai/src/charts.py) — Генератор графиков в тёмной теме.
-* [src/telegram_bot.py](file:///home/deck/Documents/ai/src/telegram_bot.py) — Модуль отправки в Telegram.
+## 🌐 Развертывание в продакшене (systemd)
+
+Сервисы для демонизации на Linux-сервере:
+
+* `/etc/systemd/system/market-intel.service` — планировщик регулярного мониторинга:
+```ini
+[Unit]
+Description=AI Slop News Agent Scheduler
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/aislopnews
+ExecStart=/root/aislopnews/.venv/bin/python main.py --schedule
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+* `/etc/systemd/system/market-intel-panel.service` — веб-панель управления:
+```ini
+[Unit]
+Description=AI Slop News Admin Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/aislopnews
+ExecStart=/root/aislopnews/.venv/bin/uvicorn panel:app --host 127.0.0.1 --port 8888
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## 📦 Релизы и версионирование
+
+* **v1.0.0 (Релиз)**:
+  - Первоначальный стабильный релиз проекта **AI Slop News**.
+  - Веб-панель администратора с SSL (`aislop.fourol.eu.cc`).
+  - Парсинг Telegram CDN фото и дедупликация через SQLite.
+  - Гибкий стиль генерации постов без шаблонных плашек.
+  - Автоматическая верстка с отступами между абзацами.
+
+---
+
+## 📄 Лицензия
+MIT License.

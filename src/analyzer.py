@@ -77,8 +77,8 @@ class Analyzer:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/fourol/market-intel-agent",
-            "X-Title": "Market Intel Agent",
+            "HTTP-Referer": "https://github.com/fourol/aislopnews",
+            "X-Title": "AI Slop News Agent",
         }
 
         payload = {
