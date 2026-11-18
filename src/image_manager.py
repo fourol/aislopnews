@@ -100,7 +100,7 @@ class ImageManager:
             fontsize=18,
             fontweight="bold",
             va="center",
-            lineheight=1.3,
+            linespacing=1.3,
         )
 
         # Credibility badge
@@ -109,7 +109,7 @@ class ImageManager:
             ax.text(
                 0.08,
                 0.22,
-                f"🔍 Статус: {credibility}",
+                f"Статус: {credibility}",
                 color=cred_color,
                 fontsize=11,
                 fontweight="bold",

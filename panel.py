@@ -1,8 +1,13 @@
 """FastAPI Web Admin Panel for Market, Tech & Web3 Intelligence Agent."""
+import collections
+import html
+import json
 import os
 import secrets
 import subprocess
+import sys
 import threading
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -10,7 +15,7 @@ from typing import Optional
 import yaml
 from dotenv import load_dotenv
 from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.config import load_config
@@ -31,9 +36,33 @@ app.mount("/images", StaticFiles(directory=str(images_path)), name="images")
 
 CONFIG_PATH = Path("config.yaml")
 
-# State for trigger
+# State for trigger & real-time logs
 IS_RUNNING_JOB = False
 LAST_JOB_STATUS = "Готов к работе"
+RECENT_LOGS = collections.deque(maxlen=400)
+
+
+def log_event(msg: str):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    formatted = f"[{timestamp}] {msg}"
+    RECENT_LOGS.append(formatted)
+    sys.__stdout__.write(formatted + "\n")
+    sys.__stdout__.flush()
+
+
+def get_service_logs(lines: int = 60) -> str:
+    try:
+        res = subprocess.run(
+            ["journalctl", "-u", "market-intel", "-n", str(lines), "--no-pager"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=4,
+        )
+        out = res.stdout.strip()
+        return out if out else "Логи службы пока пусты."
+    except Exception as e:
+        return f"Не удалось получить логи systemd: {e}"
 
 
 def is_authenticated(session_token: Optional[str] = Cookie(None)) -> bool:
@@ -60,13 +89,39 @@ def background_pipeline():
     global IS_RUNNING_JOB, LAST_JOB_STATUS
     IS_RUNNING_JOB = True
     LAST_JOB_STATUS = f"Сбор и анализ запущен [{datetime.now().strftime('%H:%M:%S')}]..."
+    log_event("🚀 [МГНОВЕННЫЙ ВЫПУСК] Старт цикла мониторинга и публикации...")
+
+    class CaptureStream:
+        def write(self, s):
+            sys.__stdout__.write(s)
+            sys.__stdout__.flush()
+            for line in s.splitlines():
+                clean = line.strip()
+                if clean:
+                    timestamp = datetime.now().strftime("%H:%M:%S")
+                    RECENT_LOGS.append(f"[{timestamp}] {clean}")
+
+        def flush(self):
+            sys.__stdout__.flush()
+
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    capture = CaptureStream()
+    sys.stdout = capture
+    sys.stderr = capture
+
     try:
         from main import run_pipeline
         run_pipeline(dry_run=False)
         LAST_JOB_STATUS = f"Успешно опубликовано [{datetime.now().strftime('%H:%M:%S')}]"
+        log_event("✅ Цикл успешно завершен! Пост опубликован в Telegram.")
     except Exception as e:
-        LAST_JOB_STATUS = f"Ошибка: {str(e)[:50]}"
+        tb = traceback.format_exc()
+        LAST_JOB_STATUS = f"Ошибка: {str(e)[:60]}"
+        log_event(f"❌ ОШИБКА ВЫПОЛНЕНИЯ: {e}\n{tb}")
     finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
         IS_RUNNING_JOB = False
 
 
@@ -211,6 +266,12 @@ async def dashboard(request: Request, session_token: Optional[str] = Cookie(None
         else f'<span class="px-3 py-1 text-xs rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center gap-1.5 font-medium"><span class="w-2 h-2 rounded-full bg-rose-400"></span>{service_status}</span>'
     )
 
+    pipeline_logs_text = "\n".join(RECENT_LOGS) if RECENT_LOGS else "Логи ручного запуска пока пусты. Нажмите «Опубликовать прямо сейчас» для запуска."
+    service_logs_text = get_service_logs(50)
+    pipeline_logs_escaped = html.escape(pipeline_logs_text)
+    pipeline_logs_json = json.dumps(pipeline_logs_text)
+    service_logs_json = json.dumps(service_logs_text)
+
     return f"""
     <!DOCTYPE html>
     <html lang="ru" class="dark">
@@ -255,13 +316,13 @@ async def dashboard(request: Request, session_token: Optional[str] = Cookie(None
                         <h2 class="text-xl font-bold mb-1">Мгновенный выпуск</h2>
                         <p class="text-sm text-slate-400 mb-6">Собрать свежие новости прямо сейчас, проанализировать через ИИ и выложить в Telegram с фото.</p>
                     </div>
-                    <form action="/api/publish-now" method="post">
-                        <button type="submit" {"disabled" if IS_RUNNING_JOB else ""} 
+                    <form action="/api/publish-now" method="post" onsubmit="setTimeout(refreshLogs, 500)">
+                        <button type="submit" id="publish-btn" {"disabled" if IS_RUNNING_JOB else ""} 
                                 class="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 font-semibold rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 disabled:opacity-50">
                             <span>🚀</span>
-                            <span>{"Идет публикация..." if IS_RUNNING_JOB else "Опубликовать пост прямо сейчас"}</span>
+                            <span id="publish-btn-text">{"Идет публикация..." if IS_RUNNING_JOB else "Опубликовать пост прямо сейчас"}</span>
                         </button>
-                        <p class="text-xs text-center text-slate-500 mt-2">{LAST_JOB_STATUS}</p>
+                        <p id="job-status-text" class="text-xs text-center text-slate-500 mt-2">{LAST_JOB_STATUS}</p>
                     </form>
                 </div>
 
@@ -303,6 +364,37 @@ async def dashboard(request: Request, session_token: Optional[str] = Cookie(None
                             <span class="font-bold text-emerald-400">{len(config.sources)}</span>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Live Logs / Console Section -->
+            <div class="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-4">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xl">📟</span>
+                            <h2 class="text-lg font-bold">Журнал событий и логи</h2>
+                            <span id="log-running-spinner" class="{'hidden' if not IS_RUNNING_JOB else ''} text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse font-medium">Выполняется процесс...</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5">Детальный вывод шагов сбора, работы LLM, подбора фото и ошибок</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="switchLogTab('pipeline')" id="tab-btn-pipeline" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white transition">Ручной запуск</button>
+                        <button onclick="switchLogTab('service')" id="tab-btn-service" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 hover:text-white transition">Служба (systemd)</button>
+                        <button onclick="refreshLogs()" title="Обновить логи" class="p-1.5 px-2.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition flex items-center gap-1">
+                            <span>🔄</span> Обновить
+                        </button>
+                        <form action="/api/clear-logs" method="post" class="inline">
+                            <button type="submit" title="Очистить буфер" class="p-1.5 px-2.5 text-xs bg-slate-800 hover:bg-red-950/40 text-red-400 rounded-lg border border-slate-700 hover:border-red-800 transition">
+                                Очистить
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Terminal Box -->
+                <div class="relative">
+                    <pre id="console-output" class="bg-black/90 font-mono text-xs rounded-xl p-4 border border-slate-800 text-slate-300 h-72 overflow-y-auto whitespace-pre-wrap leading-relaxed shadow-inner selection:bg-blue-600 selection:text-white">{pipeline_logs_escaped}</pre>
                 </div>
             </div>
 
@@ -368,9 +460,100 @@ async def dashboard(request: Request, session_token: Optional[str] = Cookie(None
                 </div>
             </div>
         </main>
+
+        <script>
+        let currentTab = 'pipeline';
+        let cachedLogs = {{
+            pipeline: {pipeline_logs_json},
+            service: {service_logs_json}
+        }};
+
+        function switchLogTab(tab) {{
+            currentTab = tab;
+            const btnP = document.getElementById('tab-btn-pipeline');
+            const btnS = document.getElementById('tab-btn-service');
+            const out = document.getElementById('console-output');
+            if (tab === 'pipeline') {{
+                btnP.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white transition";
+                btnS.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 hover:text-white transition";
+                out.textContent = cachedLogs.pipeline;
+            }} else {{
+                btnS.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white transition";
+                btnP.className = "px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-400 hover:text-white transition";
+                out.textContent = cachedLogs.service;
+            }}
+            out.scrollTop = out.scrollHeight;
+        }}
+
+        async function refreshLogs() {{
+            try {{
+                const res = await fetch('/api/logs');
+                if (res.ok) {{
+                    const data = await res.json();
+                    cachedLogs.pipeline = data.pipeline_logs;
+                    cachedLogs.service = data.service_logs;
+                    
+                    const out = document.getElementById('console-output');
+                    if (currentTab === 'pipeline') {{
+                        out.textContent = data.pipeline_logs;
+                    }} else {{
+                        out.textContent = data.service_logs;
+                    }}
+                    out.scrollTop = out.scrollHeight;
+
+                    const spinner = document.getElementById('log-running-spinner');
+                    const jobStatus = document.getElementById('job-status-text');
+                    const publishBtn = document.getElementById('publish-btn');
+                    const publishBtnText = document.getElementById('publish-btn-text');
+
+                    if (jobStatus) jobStatus.textContent = data.last_status;
+
+                    if (data.is_running) {{
+                        if (spinner) spinner.classList.remove('hidden');
+                        if (publishBtn) publishBtn.disabled = true;
+                        if (publishBtnText) publishBtnText.textContent = "Идет публикация...";
+                    }} else {{
+                        if (spinner) spinner.classList.add('hidden');
+                        if (publishBtn) publishBtn.disabled = false;
+                        if (publishBtnText) publishBtnText.textContent = "Опубликовать пост прямо сейчас";
+                    }}
+                }}
+            }} catch (e) {{
+                console.error('Failed to refresh logs:', e);
+            }}
+        }}
+
+        setInterval(refreshLogs, 3000);
+        document.addEventListener('DOMContentLoaded', () => {{
+            const out = document.getElementById('console-output');
+            if (out) out.scrollTop = out.scrollHeight;
+        }});
+        </script>
     </body>
     </html>
     """
+
+
+@app.get("/api/logs")
+async def get_logs(session_token: Optional[str] = Cookie(None)):
+    if not is_authenticated(session_token):
+        raise HTTPException(status_code=401)
+    service_logs = get_service_logs(50)
+    pipeline_logs = "\n".join(RECENT_LOGS) if RECENT_LOGS else "Логи ручного запуска пока пусты. Нажмите «Опубликовать прямо сейчас» для запуска."
+    return JSONResponse({
+        "is_running": IS_RUNNING_JOB,
+        "last_status": LAST_JOB_STATUS,
+        "pipeline_logs": pipeline_logs,
+        "service_logs": service_logs,
+    })
+
+
+@app.post("/api/clear-logs")
+async def clear_logs(session_token: Optional[str] = Cookie(None)):
+    if not is_authenticated(session_token):
+        raise HTTPException(status_code=401)
+    RECENT_LOGS.clear()
+    return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.post("/api/publish-now")
