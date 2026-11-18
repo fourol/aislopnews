@@ -19,37 +19,39 @@ class TelegramPublisher:
         try:
             with httpx.Client(timeout=30.0) as client:
                 if chart_path and Path(chart_path).exists():
-                    # Telegram caption limit is 1024 chars
-                    if len(text) <= 1000:
-                        # Send together in one photo message
-                        with open(chart_path, "rb") as f:
-                            files = {"photo": f}
-                            data = {
-                                "chat_id": self.channel_id,
-                                "caption": text,
-                                "parse_mode": "Markdown",
-                            }
-                            res = client.post(f"{self.base_url}/sendPhoto", data=data, files=files)
-                            if res.status_code == 200:
-                                return True
-                            # Fallback if markdown error
-                            data.pop("parse_mode", None)
-                            f.seek(0)
-                            res = client.post(f"{self.base_url}/sendPhoto", data=data, files=files)
-                            return res.status_code == 200
-                    else:
-                        # Caption limit exceeded: send photo with headline, then full article text
-                        with open(chart_path, "rb") as f:
-                            files = {"photo": f}
-                            caption = f"🔥 **{headline}**" if headline else ""
-                            data = {
-                                "chat_id": self.channel_id,
-                                "caption": caption,
-                                "parse_mode": "Markdown",
-                            }
-                            client.post(f"{self.base_url}/sendPhoto", data=data, files=files)
+                    # Telegram caption limit is strictly 1024 chars - send all text under photo
+                    caption_text = text
+                    if len(caption_text) > 1024:
+                        trimmed = caption_text[:1020]
+                        last_break = max(
+                            trimmed.rfind(". "),
+                            trimmed.rfind("!\n"),
+                            trimmed.rfind("?\n"),
+                            trimmed.rfind("\n\n"),
+                            trimmed.rfind("\n"),
+                        )
+                        if last_break > 500:
+                            caption_text = trimmed[:last_break + 1]
+                        else:
+                            caption_text = trimmed
 
-                # Send text message (split if > 4000 chars)
+                    with open(chart_path, "rb") as f:
+                        files = {"photo": f}
+                        data = {
+                            "chat_id": self.channel_id,
+                            "caption": caption_text,
+                            "parse_mode": "Markdown",
+                        }
+                        res = client.post(f"{self.base_url}/sendPhoto", data=data, files=files)
+                        if res.status_code == 200:
+                            return True
+                        # Fallback without markdown parsing if syntax error
+                        data.pop("parse_mode", None)
+                        f.seek(0)
+                        res = client.post(f"{self.base_url}/sendPhoto", data=data, files=files)
+                        return res.status_code == 200
+
+                # If no photo, send as text message (split if > 4000 chars)
                 chunks = self._split_text(text, 4000)
                 for chunk in chunks:
                     payload = {
