@@ -107,7 +107,7 @@ def run_pipeline(dry_run: bool = False):
             channel_id=config.telegram_channel_id,
         )
         print("Публикация детального поста с фото в Telegram-канал...")
-        success = publisher.send_digest(text=post_text, chart_path=final_image_path)
+        success = publisher.send_digest(text=post_text, chart_path=final_image_path, headline=headline)
         if success:
             print("Пост успешно опубликован в канале!")
             # Помечаем материалы обработанными

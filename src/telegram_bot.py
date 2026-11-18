@@ -10,7 +10,7 @@ class TelegramPublisher:
         self.channel_id = channel_id.strip()
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
 
-    def send_digest(self, text: str, chart_path: Optional[str] = None) -> bool:
+    def send_digest(self, text: str, chart_path: Optional[str] = None, headline: Optional[str] = None) -> bool:
         """Sends the digest text and optional chart to the configured Telegram channel."""
         if not self.bot_token or not self.channel_id:
             print("[TelegramPublisher] Bot token or channel_id not configured. Skipping send.")
@@ -38,12 +38,13 @@ class TelegramPublisher:
                             res = client.post(f"{self.base_url}/sendPhoto", data=data, files=files)
                             return res.status_code == 200
                     else:
-                        # Caption limit exceeded: send photo first, then full digest message
+                        # Caption limit exceeded: send photo with headline, then full article text
                         with open(chart_path, "rb") as f:
                             files = {"photo": f}
+                            caption = f"🔥 **{headline}**" if headline else ""
                             data = {
                                 "chat_id": self.channel_id,
-                                "caption": "📊 **Аналитический срез рынка и активности конкурентов**",
+                                "caption": caption,
                                 "parse_mode": "Markdown",
                             }
                             client.post(f"{self.base_url}/sendPhoto", data=data, files=files)
