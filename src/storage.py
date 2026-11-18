@@ -19,6 +19,7 @@ class Item:
     item_hash: str = ""
     id: Optional[int] = None
     is_processed: bool = False
+    image_url: Optional[str] = None
 
 
 class Storage:
@@ -47,10 +48,17 @@ class Storage:
                     content TEXT,
                     published_at TEXT,
                     discovered_at TEXT,
-                    is_processed INTEGER DEFAULT 0
+                    is_processed INTEGER DEFAULT 0,
+                    image_url TEXT
                 )
                 """
             )
+            # Ensure image_url column exists for existing tables
+            cursor = conn.execute("PRAGMA table_info(items)")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "image_url" not in columns:
+                conn.execute("ALTER TABLE items ADD COLUMN image_url TEXT")
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS digests (
@@ -80,9 +88,9 @@ class Storage:
                     """
                     INSERT INTO items (
                         item_hash, url, title, source_name, source_type,
-                        competitor, content, published_at, discovered_at, is_processed
+                        competitor, content, published_at, discovered_at, is_processed, image_url
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                     """,
                     (
                         item_hash,
@@ -94,6 +102,7 @@ class Storage:
                         item.content,
                         item.published_at or now,
                         now,
+                        item.image_url,
                     ),
                 )
                 conn.commit()
@@ -107,10 +116,10 @@ class Storage:
             cursor = conn.execute(
                 """
                 SELECT id, item_hash, url, title, source_name, source_type,
-                       competitor, content, published_at, is_processed
+                       competitor, content, published_at, is_processed, image_url
                 FROM items
                 WHERE is_processed = 0
-                ORDER BY id ASC
+                ORDER BY id DESC
                 LIMIT ?
                 """,
                 (limit,),
@@ -128,6 +137,7 @@ class Storage:
                     content=row["content"],
                     published_at=row["published_at"],
                     is_processed=bool(row["is_processed"]),
+                    image_url=row["image_url"],
                 )
                 for row in rows
             ]

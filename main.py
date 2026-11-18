@@ -1,4 +1,4 @@
-"""Main entry point for Competitor & Market Intelligence Agent."""
+"""Main entry point for Competitor, Tech & Web3 Intelligence Agent."""
 import argparse
 import sys
 import time
@@ -7,6 +7,7 @@ from src.analyzer import Analyzer
 from src.charts import ChartGenerator
 from src.collectors import RSSCollector, TelegramPreviewCollector, WebPageCollector
 from src.config import load_config
+from src.image_manager import ImageManager
 from src.storage import Storage
 from src.telegram_bot import TelegramPublisher
 
@@ -14,6 +15,8 @@ from src.telegram_bot import TelegramPublisher
 def run_pipeline(dry_run: bool = False):
     config = load_config()
     storage = Storage()
+    image_mgr = ImageManager()
+
     print("=" * 60)
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Запуск цикла мониторинга...")
     print("=" * 60)
@@ -41,17 +44,17 @@ def run_pipeline(dry_run: bool = False):
 
     print(f"\nВсего добавлено новых материалов: {total_new}")
 
-    # 2. Получение необработанных материалов для дайджеста
+    # 2. Получение необработанных материалов для анализа
     unprocessed = storage.get_unprocessed_items(limit=config.max_items_per_run)
     if not unprocessed:
-        print("Нет новых материалов для анализа. Дайджест не требуется.")
+        print("Нет новых материалов для анализа. Публикация не требуется.")
         return
 
     print(f"Готово к анализу через LLM: {len(unprocessed)} материалов.")
 
-    # 3. Анализ через LLM
+    # 3. Анализ через LLM и выбор главного события
     if not config.llm_api_key and not dry_run:
-        print("[Внимание] Не указан LLM_API_KEY в .env! Укажите ключ OpenAI / OpenRouter / DeepSeek.")
+        print("[Внимание] Не указан LLM_API_KEY в .env! Укажите ключ OpenRouter / OpenAI.")
         return
 
     analyzer = Analyzer(
@@ -60,51 +63,63 @@ def run_pipeline(dry_run: bool = False):
         model=config.llm_model,
     )
 
-    print(f"Отправка запроса в LLM ({config.llm_model})...")
+    print(f"Отправка запроса в LLM ({config.llm_model}) для детального разбора...")
     analysis_result = analyzer.analyze(unprocessed)
     if not analysis_result:
         print("[Ошибка] Не удалось получить результат анализа от модели.")
         return
 
-    digest_text = analysis_result.get("telegram_digest", "Дайджест не сформирован.")
-    topic_distribution = analysis_result.get("topic_distribution", {})
-    competitor_mentions = analysis_result.get("competitor_mentions", {})
+    post_text = analysis_result.get("telegram_post", "Пост не сформирован.")
+    headline = analysis_result.get("headline", "Главное событие")
+    topic = analysis_result.get("topic", "Tech")
+    credibility = analysis_result.get("credibility", "")
+    image_keyword = analysis_result.get("image_keyword", "")
 
-    # 4. Генерация графиков
-    chart_gen = ChartGenerator()
-    chart_path = chart_gen.generate_digest_chart(
-        topic_counts=topic_distribution,
-        competitor_counts=competitor_mentions,
-    )
-    if chart_path:
-        print(f"График успешно сгенерирован: {chart_path}")
+    # 4. Подбор изображения (из оригинального поста, из сети или стильная обложка)
+    selected_idx = analysis_result.get("selected_item_index", 1) - 1
+    selected_item = unprocessed[selected_idx] if 0 <= selected_idx < len(unprocessed) else unprocessed[0]
+
+    final_image_path = None
+    if selected_item.image_url:
+        print(f"Загрузка оригинального фото из Telegram-поста: {selected_item.image_url[:60]}...")
+        final_image_path = image_mgr.download_image(selected_item.image_url)
+
+    if not final_image_path and image_keyword:
+        print(f"Поиск релевантной картинки в сети по запросу: '{image_keyword}'...")
+        final_image_path = image_mgr.search_web_image(image_keyword)
+
+    if not final_image_path:
+        print("Генерация стильной карточки-обложки для поста...")
+        final_image_path = image_mgr.create_cover_card(headline, topic, credibility)
+
+    print(f"Изображение для публикации готово: {final_image_path}")
 
     # 5. Публикация в Telegram или Dry-run вывод
     if dry_run:
-        print("\n" + "=" * 25 + " [DRY-RUN ДАЙДЖЕСТ] " + "=" * 25)
-        print(digest_text)
+        print("\n" + "=" * 25 + " [DRY-RUN ДЕТАЛЬНЫЙ ПОСТ] " + "=" * 25)
+        print(post_text)
         print("=" * 60)
-        print(f"График сохранен в: {chart_path}")
+        print(f"Фото: {final_image_path}")
         print("В режиме --dry-run статус в БД не меняется, в Telegram не отправляется.")
     else:
         publisher = TelegramPublisher(
             bot_token=config.telegram_bot_token,
             channel_id=config.telegram_channel_id,
         )
-        print("Публикация дайджеста в Telegram-канал...")
-        success = publisher.send_digest(text=digest_text, chart_path=chart_path)
+        print("Публикация детального поста с фото в Telegram-канал...")
+        success = publisher.send_digest(text=post_text, chart_path=final_image_path)
         if success:
-            print("Дайджест успешно отправлен в канал!")
-            # Помечаем обработанными только при успешной отправке
+            print("Пост успешно опубликован в канале!")
+            # Помечаем материалы обработанными
             item_ids = [item.id for item in unprocessed if item.id]
             storage.mark_items_processed(item_ids)
-            storage.record_digest(digest_text, chart_path, len(unprocessed), status="sent")
+            storage.record_digest(post_text, final_image_path, len(unprocessed), status="sent")
         else:
             print("[Ошибка] Не удалось опубликовать пост в Telegram. Проверьте токен и доступ бота к каналу.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Агент мониторинга рынка и конкурентов в Telegram")
+    parser = argparse.ArgumentParser(description="Агент углубленного мониторинга технологий, Web3 и ИИ в Telegram")
     parser.add_argument("--run-once", action="store_true", help="Запустить один цикл сбора и отправки")
     parser.add_argument("--dry-run", action="store_true", help="Собрать и проанализировать без отправки в TG")
     parser.add_argument("--test-tg", action="store_true", help="Отправить тестовое сообщение в канал для проверки")
@@ -115,7 +130,7 @@ def main():
 
     if args.test_tg:
         publisher = TelegramPublisher(bot_token=config.telegram_bot_token, channel_id=config.telegram_channel_id)
-        msg = "🤖 **Тест связи:** Агент мониторинга и конкурентной разведки успешно подключен к каналу!"
+        msg = "🤖 **Тест связи:** Бот настроен на разбор ключевых тем из @lalyounft, @GeodemaNews и мирового теха!"
         ok = publisher.send_digest(text=msg)
         print("Результат отправки:", "УСПЕШНО" if ok else "ОШИБКА")
         sys.exit(0 if ok else 1)
