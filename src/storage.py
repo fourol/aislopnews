@@ -153,6 +153,14 @@ class Storage:
             )
             conn.commit()
 
+    def get_recent_digest_texts(self, limit: int = 2) -> List[str]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT summary_text FROM digests ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [row["summary_text"] or "" for row in rows]
+
     def record_digest(self, summary_text: str, chart_path: Optional[str], item_count: int, status: str = "sent"):
         with self._get_connection() as conn:
             conn.execute(

@@ -16,15 +16,7 @@ ANALYSIS_SYSTEM_PROMPT = """Ты — опытный автор, редактор
 Канал имеет высокий уровень бустов и поддерживает премиальное форматирование Telegram:
 1. Заголовок: 1-я строка поста — яркий заголовок жирным шрифтом с тематическим эмодзи: 🔥 <b>Заголовок новости</b>.
 2. Основной текст: 1-2 емких, легко читаемых абзаца, объясняющих суть события и почему это важно.
-3. СВОРАЧИВАЕМАЯ ЦИТАТА (<blockquote expandable>):
-   Используй этот блок ТОЛЬКО ТОГДА, КОГДА ЭТО ДЕЙСТВИТЕЛЬНО УМЕСТНО! Ни в коем случае не пихай его в каждый пост подряд.
-   Уместные случаи для цитаты:
-   • Реальная прямая речь или цитата создателей/разработчиков/инсайдеров («...»).
-   • Длинный патчноут, список ключевых характеристик или технических параметров, которые имеет смысл свернуть для компактности.
-   Если в посте нет прямой цитаты или громоздкого списка — НЕ используй <blockquote expandable>, пиши обычными красивыми, чистыми абзацами. Посты должны выглядеть естественно и гармонично!
-   Пример (когда уместно):
-   <blockquote expandable>💬 <b>Цитата разработчиков:</b>
-   «Мы переработали физику и добавили новые механики...»</blockquote>
+__QUOTE_RULE__
 4. Спойлеры (<tg-spoiler>): если уместно скрыть интригу, цену или дату релиза — используй <tg-spoiler>скрытый текст</tg-spoiler>.
 
 ✍️ СТИЛЬ И ФОРМАТ (БЕЗ ШАБЛОНОВ И КЛИШЕ):
@@ -57,13 +49,24 @@ ANALYSIS_SYSTEM_PROMPT = """Ты — опытный автор, редактор
 """
 
 
+QUOTE_RULE_ALLOWED = """3. СВОРАЧИВАЕМАЯ ЦИТАТА (<blockquote expandable>) — РАЗРЕШЕНА В ЭТОМ ПОСТЕ:
+   Используй максимум ОДИН такой блок и только если в новости действительно есть прямая речь создателей/разработчиков/инсайдеров или громоздкий список характеристик, который уместно свернуть.
+   Если прямой цитаты или длинного списка нет — НЕ используй blockquote и не выдумывай цитату. Пиши обычными абзацами.
+   Пример:
+   <blockquote expandable>💬 <b>Цитата разработчиков:</b>
+   «Мы переработали физику и добавили новые механики...»</blockquote>"""
+
+QUOTE_RULE_FORBIDDEN = """3. ЦИТАТЫ И BLOCKQUOTE — ЗАПРЕЩЕНЫ В ЭТОМ ПОСТЕ:
+   Не используй <blockquote>, <blockquote expandable>, строки с '>' и прямые цитаты чужих слов. Передавай смысл своими словами. Это правило важнее любых примеров ниже."""
+
+
 class Analyzer:
     def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1", model: str = "openai/gpt-4o-mini"):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
 
-    def analyze(self, items: List[Item]) -> Optional[Dict[str, Any]]:
+    def analyze(self, items: List[Item], allow_quote: bool = False) -> Optional[Dict[str, Any]]:
         if not items:
             return None
 
@@ -77,13 +80,19 @@ class Analyzer:
                 f"    Текст: {item.content[:600]}\n"
             )
 
+        quote_hint = (
+            "Если в новости есть реальная прямая речь или длинный список фич — можешь использовать один <blockquote expandable>, но только если это уместно. "
+            if allow_quote
+            else "Не используй <blockquote> и прямые цитаты — передавай смысл своими словами. "
+        )
         user_content = (
             f"Вот {len(items)} собранных материалов из каналов и лент:\n\n"
             + "\n".join(items_text)
             + "\n\nВыбери ОДНО самое интересное событие. "
             "Категорически исключай СВО и любые военные темы! Темы блокировок РКН, ограничений интернета, сбоев сервисов, IT и технологий полностью разрешены. "
-            "Напиши живой пост в авторском стиле. Если в новости есть прямая речь, цитата или длинный список фич — используй <blockquote expandable>, но только если это уместно. "
-            "Обязательно делай пустые строки (двойной enter) между абзацами!"
+            "Напиши живой пост в авторском стиле. "
+            + quote_hint
+            + "Обязательно делай пустые строки (двойной enter) между абзацами!"
         )
 
         headers = {
@@ -93,10 +102,13 @@ class Analyzer:
             "X-Title": "AI Slop News Agent",
         }
 
+        quote_rule = QUOTE_RULE_ALLOWED if allow_quote else QUOTE_RULE_FORBIDDEN
+        system_prompt = ANALYSIS_SYSTEM_PROMPT.replace("__QUOTE_RULE__", quote_rule)
+
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ],
             "temperature": 0.4,
@@ -150,6 +162,18 @@ class Analyzer:
                     plain_first = re.sub(r'<[^>]+>', '', first_line)
                     if hl and hl.lower() not in plain_first.lower() and len(plain_first) > 90 and not first_line.startswith("<") and not first_line.startswith("🔥"):
                         post = f"🔥 <b>{hl}</b>\n\n{post}"
+
+                    # Enforce quote policy on the generated post
+                    if not allow_quote:
+                        # Remove any blockquotes / markdown quotes the model still produced
+                        post = re.sub(r'<blockquote[^>]*>.*?</blockquote>', '', post, flags=re.S | re.I)
+                        post = re.sub(r'^\s*>\s?.*(?:\n|$)', '', post, flags=re.M)
+                    else:
+                        # Keep at most one blockquote per post
+                        blocks = list(re.finditer(r'<blockquote[^>]*>.*?</blockquote>', post, flags=re.S | re.I))
+                        for block in reversed(blocks[1:]):
+                            inner = re.sub(r'</?blockquote[^>]*>', '', block.group(0), flags=re.I)
+                            post = post[:block.start()] + inner + post[block.end():]
 
                     # Normalize excessive newlines
                     post = re.sub(r'\n{3,}', '\n\n', post)

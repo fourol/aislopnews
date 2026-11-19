@@ -1,5 +1,6 @@
 """Main entry point for Competitor, Tech & Web3 Intelligence Agent."""
 import argparse
+import re
 import sys
 import time
 from datetime import datetime
@@ -10,6 +11,12 @@ from src.config import load_config
 from src.image_manager import ImageManager
 from src.storage import Storage
 from src.telegram_bot import TelegramPublisher
+
+
+def _contains_blockquote(text: str) -> bool:
+    if re.search(r"<blockquote\b", text, flags=re.IGNORECASE):
+        return True
+    return any(line.lstrip().startswith(">") for line in text.splitlines())
 
 
 def run_pipeline(dry_run: bool = False):
@@ -63,8 +70,12 @@ def run_pipeline(dry_run: bool = False):
         model=config.llm_model,
     )
 
+    recent_texts = storage.get_recent_digest_texts(limit=2)
+    allow_quote = not any(_contains_blockquote(t) for t in recent_texts)
+    print(f"Режим цитат: {'разрешено' if allow_quote else 'запрещено'}")
+
     print(f"Отправка запроса в LLM ({config.llm_model}) для детального разбора...")
-    analysis_result = analyzer.analyze(unprocessed)
+    analysis_result = analyzer.analyze(unprocessed, allow_quote=allow_quote)
     if not analysis_result:
         print("[Ошибка] Не удалось получить результат анализа от модели.")
         return
