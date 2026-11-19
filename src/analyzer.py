@@ -47,7 +47,7 @@ ANALYSIS_SYSTEM_PROMPT = """Ты — опытный автор, редактор
 ФОРМАТ ОТВЕТА (ЧИСТЫЙ JSON):
 {
   "selected_item_index": 1,
-  "headline": "Яркий заголовок темы",
+  "headline": "Яркий заголовок темы БЕЗ HTML-тегов и без эмодзи (чистый текст для обложки)",
   "telegram_post": "Полный HTML-текст поста для Telegram с <blockquote expandable>, <b>, пустыми строками между абзацами",
   "credibility": "официально / слух / инсайд",
   "topic": "ИИ / Игры / Telegram / Web3 / Tech",
@@ -154,6 +154,11 @@ class Analyzer:
                     # Normalize excessive newlines
                     post = re.sub(r'\n{3,}', '\n\n', post)
                     parsed["telegram_post"] = post.strip()
+
+                if "headline" in parsed and isinstance(parsed["headline"], str):
+                    hl = re.sub(r'<[^>]+>', '', parsed["headline"])
+                    hl = re.sub(r'[*_`]', '', hl)
+                    parsed["headline"] = hl.strip()
 
                 return parsed
         except Exception as e:

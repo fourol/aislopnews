@@ -1,6 +1,7 @@
 """Image manager: downloads images from Telegram posts, searches web images, or creates styled cards."""
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Optional
 import httpx
 import matplotlib
@@ -78,11 +79,19 @@ class ImageManager:
         ax.set_facecolor(bg_color)
         ax.axis("off")
 
+        # Clean HTML tags and markdown formatting from title, topic, credibility
+        clean_title = re.sub(r'<[^>]+>', '', title)
+        clean_title = re.sub(r'[*_`]', '', clean_title)
+        clean_title = re.sub(r'\s+', ' ', clean_title).strip()
+
+        clean_topic = re.sub(r'<[^>]+>', '', topic).strip()
+        clean_cred = re.sub(r'<[^>]+>', '', credibility).strip()
+
         # Category badge
         ax.text(
             0.08,
             0.85,
-            f"⚡️ {topic.upper()} | ДЕТАЛЬНЫЙ РАЗБОР",
+            f"⚡️ {clean_topic.upper()} | ДЕТАЛЬНЫЙ РАЗБОР",
             color=accent_color,
             fontsize=13,
             fontweight="bold",
@@ -91,7 +100,7 @@ class ImageManager:
 
         # Wrap title nicely
         import textwrap
-        wrapped_title = "\n".join(textwrap.wrap(title, width=38))
+        wrapped_title = "\n".join(textwrap.wrap(clean_title, width=38))
         ax.text(
             0.08,
             0.55,
@@ -104,12 +113,12 @@ class ImageManager:
         )
 
         # Credibility badge
-        if credibility:
-            cred_color = "#a6e3a1" if "подтвер" in credibility.lower() else "#fab387"
+        if clean_cred:
+            cred_color = "#a6e3a1" if "подтвер" in clean_cred.lower() else "#fab387"
             ax.text(
                 0.08,
                 0.22,
-                f"Статус: {credibility}",
+                f"Статус: {clean_cred}",
                 color=cred_color,
                 fontsize=11,
                 fontweight="bold",
