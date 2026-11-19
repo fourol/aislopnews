@@ -17,8 +17,9 @@ ANALYSIS_SYSTEM_PROMPT = """Ты — опытный автор, редактор
 1. Заголовок: 1-я строка поста — яркий заголовок жирным шрифтом с тематическим эмодзи: 🔥 <b>Заголовок новости</b>.
 2. Основной текст: 1-2 емких, легко читаемых абзаца, объясняющих суть события и почему это важно.
 3. СВОРАЧИВАЕМАЯ ЦИТАТА (<blockquote expandable>):
-   ОБЯЗАТЕЛЬНО используй тег <blockquote expandable>...</blockquote> для подробностей, цитат разработчиков, списков изменений, характеристик или технических нюансов.
-   В Telegram эта плашка отображается фирменным цветом канала и аккуратно сворачивается под кнопку «Читать далее», сохраняя пост компактным и стильным!
+   В КАЖДОМ посте ОБЯЗАТЕЛЬНО используй блок <blockquote expandable>...</blockquote>!
+   Помести внутрь глубокие подробности, цитату разработчиков/инсайдеров, ключевые цифры, характеристики или список фич.
+   В Telegram-канале 8-го уровня эта плашка отображается фирменным цветом канала и аккуратно сворачивается под кнопку «Читать далее», делая пост невероятно стильным и компактным!
    Пример:
    <blockquote expandable>⚙️ <b>Ключевые детали:</b>
    • Первая важная деталь или фича с контекстом.
@@ -121,6 +122,10 @@ class Analyzer:
                     # Convert any markdown bold **text** to <b>text</b>
                     post = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', post)
 
+                    # Deduplicate repeated bold headline tags if model duplicated them
+                    post = re.sub(r'^(?:\s*🔥\s*)*(?:<b>\s*)*(?:\s*🔥\s*)*(?:<b>\s*)*', '🔥 <b>', post)
+                    post = re.sub(r'</b>\s*</b>', '</b>', post)
+
                     lines = post.split("\n")
                     # If line 0 (headline) is immediately followed by text on line 1, insert empty line
                     if len(lines) >= 2 and lines[0].strip() and lines[1].strip() and not lines[1].strip().startswith("<blockquote"):
@@ -131,11 +136,19 @@ class Analyzer:
                     first_line = post.split("\n", 1)[0].strip()
                     hl = parsed.get("headline", "").strip()
                     plain_first = re.sub(r'<[^>]+>', '', first_line)
-                    if hl and hl.lower() not in plain_first.lower() and len(plain_first) > 90 and not first_line.startswith("<"):
+                    if hl and hl.lower() not in plain_first.lower() and len(plain_first) > 90 and not first_line.startswith("<") and not first_line.startswith("🔥"):
                         post = f"🔥 <b>{hl}</b>\n\n{post}"
 
-                    # Ensure empty line between sentence ends and capital letters / lists (outside tags)
-                    post = re.sub(r'([.!?»\)])\n([A-ZА-ЯЁ0-9\*\#\-\•])', r'\1\n\n\2', post)
+                    # Ensure expandable blockquote is present
+                    if '<blockquote' not in post:
+                        paragraphs = [p.strip() for p in post.split('\n\n') if p.strip()]
+                        if len(paragraphs) >= 3:
+                            paragraphs[2] = f'<blockquote expandable>⚙️ <b>Подробности и цифры:</b>\n{paragraphs[2]}</blockquote>'
+                            post = '\n\n'.join(paragraphs)
+                        elif len(paragraphs) == 2:
+                            paragraphs[1] = f'<blockquote expandable>⚙️ <b>Подробности:</b>\n{paragraphs[1]}</blockquote>'
+                            post = '\n\n'.join(paragraphs)
+
                     # Normalize excessive newlines
                     post = re.sub(r'\n{3,}', '\n\n', post)
                     parsed["telegram_post"] = post.strip()
