@@ -126,6 +126,12 @@ class Analyzer:
                     post = re.sub(r'^(?:\s*🔥\s*)*(?:<b>\s*)*(?:\s*🔥\s*)*(?:<b>\s*)*', '🔥 <b>', post)
                     post = re.sub(r'</b>\s*</b>', '</b>', post)
 
+                    # If first line has open <b> without closing </b>, close it at the end of the headline
+                    lines = post.split("\n")
+                    if lines and '<b>' in lines[0] and '</b>' not in lines[0]:
+                        lines[0] = lines[0] + '</b>'
+                        post = '\n'.join(lines)
+
                     lines = post.split("\n")
                     # If line 0 (headline) is immediately followed by text on line 1, insert empty line
                     if len(lines) >= 2 and lines[0].strip() and lines[1].strip() and not lines[1].strip().startswith("<blockquote"):
