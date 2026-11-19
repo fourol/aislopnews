@@ -5,6 +5,61 @@ from typing import Optional
 import httpx
 
 
+# Telegram Premium Custom Emoji mappings from NewsEmoji pack (https://t.me/addemoji/NewsEmoji)
+NEWS_EMOJI_MAP = {
+    "🔥": "5424972470023104089",
+    "⚡️": "5456140674028019486",
+    "⚡": "5456140674028019486",
+    "🎮": "5361741454685256344",
+    "⚙️": "5341715473882955310",
+    "⚙": "5341715473882955310",
+    "💡": "5422439311196834318",
+    "💎": "5427168083074628963",
+    "💬": "5443038326535759644",
+    "💭": "5467538555158943525",
+    "📊": "5231200819986047254",
+    "📈": "5244837092042750681",
+    "📉": "5246762912428603768",
+    "🌐": "5447410659077661506",
+    "🔍": "5231012545799666522",
+    "🖥": "5282843764451195532",
+    "🔒": "5296369303661067030",
+    "🔗": "5271604874419647061",
+    "✔️": "5206607081334906820",
+    "❌": "5210952531676504517",
+    "🚨": "5395695537687123235",
+    "🆕": "5382357040008021292",
+    "🔝": "5415655814079723871",
+    "📌": "5397782960512444700",
+    "✨": "5325547803936572038",
+    "👑": "5217822164362739968",
+    "⚠️": "5447644880824181073",
+    "‼️": "5440660757194744323",
+    "❗️": "5274099962655816924",
+    "👀": "5210956306952758910",
+    "🎉": "5461151367559141950",
+    "🚩": "5460755126761312667",
+    "🏠": "5416041192905265756",
+    "🗓": "5413879192267805083",
+    "💯": "5341498088408234504",
+    "🔔": "5458603043203327669",
+    "🛡": "5251203410396458957",
+    "💵": "5409048419211682843",
+    "💸": "5233326571099534068",
+    "💱": "5402186569006210455",
+    "🎙": "5294339927318739359",
+    "📣": "5424818078833715060",
+    "⭐️": "5438496463044752972",
+    "⬇️": "5406745015365943482",
+    "🔼": "5449683594425410231",
+    "🔽": "5447183459602669338",
+    "▶️": "5264919878082509254",
+    "🔴": "5411225014148014586",
+    "🟢": "5416081784641168838",
+    "➡️": "5416117059207572332",
+}
+
+
 class TelegramPublisher:
     def __init__(self, bot_token: str, channel_id: str):
         self.bot_token = bot_token.strip()
@@ -12,8 +67,27 @@ class TelegramPublisher:
         self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
 
     @classmethod
+    def inject_custom_emojis(cls, text: str) -> str:
+        """Replaces standard emojis with custom emoji tags from NewsEmoji pack using single-pass regex."""
+        tagged = {}
+
+        def save_tagged(match):
+            key = f"__TG_EMOJI_{len(tagged)}__"
+            tagged[key] = match.group(0)
+            return key
+
+        text = re.sub(r"<tg-emoji[^>]*>.*?</tg-emoji>", save_tagged, text)
+
+        pattern = "|".join(re.escape(em) for em in sorted(NEWS_EMOJI_MAP.keys(), key=len, reverse=True))
+        text = re.sub(pattern, lambda m: f'<tg-emoji emoji-id="{NEWS_EMOJI_MAP[m.group(0)]}">{m.group(0)}</tg-emoji>', text)
+
+        for key, val in tagged.items():
+            text = text.replace(key, val)
+        return text
+
+    @classmethod
     def prepare_html(cls, text: str) -> str:
-        """Converts markdown artifacts to Telegram HTML and balances tags."""
+        """Converts markdown artifacts to Telegram HTML, injects NewsEmoji and balances tags."""
         # Convert markdown bold **text** to <b>text</b>
         text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
 
@@ -37,6 +111,9 @@ class TelegramPublisher:
             if in_quote:
                 new_lines[-1] += '</blockquote>'
             text = '\n'.join(new_lines)
+
+        # Inject custom emojis from NewsEmoji
+        text = cls.inject_custom_emojis(text)
 
         # Auto-close open tags
         for tag in ['b', 'i', 'code', 'tg-spoiler', 'blockquote']:
