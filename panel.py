@@ -4,6 +4,7 @@ import html
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -50,19 +51,32 @@ def log_event(msg: str):
     sys.__stdout__.flush()
 
 
+def _is_systemd_mode() -> bool:
+    return not Path("/.dockerenv").exists() and shutil.which("systemctl") is not None
+
+
 def get_service_logs(lines: int = 60) -> str:
-    try:
-        res = subprocess.run(
-            ["journalctl", "-u", "market-intel", "-n", str(lines), "--no-pager"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=4,
-        )
-        out = res.stdout.strip()
-        return out if out else "Логи службы пока пусты."
-    except Exception as e:
-        return f"Не удалось получить логи systemd: {e}"
+    if _is_systemd_mode() and shutil.which("journalctl"):
+        try:
+            res = subprocess.run(
+                ["journalctl", "-u", "market-intel", "-n", str(lines), "--no-pager"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=4,
+            )
+            out = res.stdout.strip()
+            if out:
+                return out
+        except Exception:
+            pass
+
+    log_file = Path("data/agent.log")
+    if log_file.exists():
+        content = log_file.read_text(encoding="utf-8", errors="ignore").splitlines()
+        tail = "\n".join(content[-lines:]).strip()
+        return tail if tail else "Логи службы пока пусты."
+    return "Логи службы пока пусты."
 
 
 def is_authenticated(session_token: Optional[str] = Cookie(None)) -> bool:
@@ -72,17 +86,24 @@ def is_authenticated(session_token: Optional[str] = Cookie(None)) -> bool:
 
 
 def get_service_status() -> str:
-    try:
-        res = subprocess.run(
-            ["systemctl", "is-active", "market-intel"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=3,
-        )
-        return res.stdout.strip()
-    except Exception:
-        return "unknown"
+    if _is_systemd_mode():
+        try:
+            res = subprocess.run(
+                ["systemctl", "is-active", "market-intel"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=3,
+            )
+            return res.stdout.strip()
+        except Exception:
+            return "unknown"
+
+    hb_file = Path("data/agent_heartbeat")
+    if hb_file.exists():
+        age = datetime.now().timestamp() - hb_file.stat().st_mtime
+        return "active" if age < 120 else "inactive"
+    return "inactive"
 
 
 def background_pipeline():
@@ -580,8 +601,9 @@ async def set_interval(hours: int = Form(...), session_token: Optional[str] = Co
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, allow_unicode=True)
 
-        # Restart service so interval changes immediately
-        subprocess.run(["systemctl", "restart", "market-intel"], check=False)
+        # Restart systemd service if running on host; in Docker main.py picks up config changes automatically
+        if _is_systemd_mode():
+            subprocess.run(["systemctl", "restart", "market-intel"], check=False)
     except Exception as e:
         print("Error saving interval:", e)
     return RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)

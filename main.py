@@ -1,5 +1,7 @@
 """Main entry point for Competitor, Tech & Web3 Intelligence Agent."""
 import argparse
+import io
+from pathlib import Path
 import sys
 import time
 from datetime import datetime
@@ -136,6 +138,40 @@ def run_pipeline(dry_run: bool = False):
             print("[Ошибка] Не удалось опубликовать пост в Telegram. Проверьте токен и доступ бота к каналу.")
 
 
+class _TeeStream(io.TextIOBase):
+    """Mirrors stdout/stderr to a rotating local log file for container/non-systemd viewing."""
+
+    def __init__(self, orig, log_path: Path, max_bytes: int = 256_000):
+        self.orig = orig
+        self.log_path = log_path
+        self.max_bytes = max_bytes
+
+    def write(self, s: str) -> int:
+        self.orig.write(s)
+        self.orig.flush()
+        try:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            if self.log_path.exists() and self.log_path.stat().st_size > self.max_bytes:
+                tail = self.log_path.read_text(encoding="utf-8", errors="ignore")[-self.max_bytes // 2 :]
+                self.log_path.write_text(tail, encoding="utf-8")
+            with self.log_path.open("a", encoding="utf-8") as f:
+                f.write(s)
+        except Exception:
+            pass
+        return len(s)
+
+    def flush(self):
+        self.orig.flush()
+
+
+def _write_heartbeat(path: Path) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(datetime.now().isoformat(), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="Агент углубленного мониторинга технологий, Web3 и ИИ в Telegram")
     parser.add_argument("--run-once", action="store_true", help="Запустить один цикл сбора и отправки")
@@ -154,15 +190,31 @@ def main():
         sys.exit(0 if ok else 1)
 
     if args.schedule:
+        log_path = Path("data/agent.log")
+        heartbeat_path = Path("data/agent_heartbeat")
+        sys.stdout = _TeeStream(sys.stdout, log_path)
+        sys.stderr = _TeeStream(sys.stderr, log_path)
+
         hours = config.digest_schedule_hours
         print(f"Агент запущен в фоновом режиме. Цикл каждые {hours} ч. (Ctrl+C для остановки)")
         while True:
+            _write_heartbeat(heartbeat_path)
             try:
                 run_pipeline(dry_run=args.dry_run)
             except Exception as e:
                 print(f"[Ошибка в цикле]: {e}")
+
+            hours = load_config().digest_schedule_hours
             print(f"Ожидание следующего цикла ({hours} ч.)...")
-            time.sleep(hours * 3600)
+            elapsed = 0
+            while elapsed < hours * 3600:
+                _write_heartbeat(heartbeat_path)
+                time.sleep(min(30, max(1, hours * 3600 - elapsed)))
+                elapsed += 30
+                new_hours = load_config().digest_schedule_hours
+                if new_hours != hours:
+                    hours = new_hours
+                    print(f"Интервал обновлён на {hours} ч.")
 
     # По умолчанию запускаем один раз
     run_pipeline(dry_run=args.dry_run)
