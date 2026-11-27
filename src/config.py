@@ -25,6 +25,7 @@ class AppConfig:
     llm_api_key: str
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
+    llm_fallback_models: List[str] = field(default_factory=list)
     sources: List[SourceConfig] = field(default_factory=list)
     digest_schedule_hours: int = 24
     max_items_per_run: int = 30
@@ -36,6 +37,17 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
     llm_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
     llm_base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
     llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    raw_fallbacks = os.getenv("LLM_FALLBACK_MODELS", "").strip()
+    if raw_fallbacks:
+        llm_fallback_models = [m.strip() for m in raw_fallbacks.split(",") if m.strip()]
+    elif "openrouter.ai" in llm_base_url:
+        llm_fallback_models = [
+            "openrouter/free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "nvidia/nemotron-3.5-lightning:free",
+        ]
+    else:
+        llm_fallback_models = []
 
     sources: List[SourceConfig] = []
     schedule_hours = 24
@@ -65,6 +77,7 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
         llm_api_key=llm_key,
         llm_base_url=llm_base_url,
         llm_model=llm_model,
+        llm_fallback_models=llm_fallback_models,
         sources=sources,
         digest_schedule_hours=schedule_hours,
         max_items_per_run=max_items,

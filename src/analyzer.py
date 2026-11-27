@@ -40,6 +40,7 @@ ANALYSIS_SYSTEM_PROMPT = """Ты — опытный автор, редактор
 4. Спойлеры (<tg-spoiler>): если уместно скрыть интригу, цену или дату релиза — используй <tg-spoiler>скрытый текст</tg-spoiler>.
 
 ✍️ СТИЛЬ И ФОРМАТ (БЕЗ ШАБЛОНОВ И КЛИШЕ):
+- Пиши СТРОГО НА РУССКОМ ЯЗЫКЕ (даже если исходная статья на английском).
 - Пиши разнообразно и живо, как крутой авторский Telegram-канал (в стиле Код Дурова, Wylsacom Red, Rozetked, The Verge).
 - Никаких одинаковых штампованных плашек и искусственных цитат в конце!
 - Оценка достоверности НЕ обязательна отдельной строкой — упоминай статус только если это действительно слух, утечка или спорный инсайд.
@@ -73,10 +74,34 @@ ANALYSIS_SYSTEM_PROMPT = """Ты — опытный автор, редактор
 
 
 class Analyzer:
-    def __init__(self, api_key: str, base_url: str = "https://openrouter.ai/api/v1", model: str = "openai/gpt-4o-mini"):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://openrouter.ai/api/v1",
+        model: str = "openai/gpt-4o-mini",
+        fallback_models: Optional[List[str]] = None,
+    ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.fallback_models = [m for m in (fallback_models or []) if m and m != model]
+
+    @staticmethod
+    def _parse_json_response(raw_text: str) -> Dict[str, Any]:
+        cleaned = re.sub(r"<think>.*?</think>", "", raw_text, flags=re.S | re.I).strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned.rsplit("```", 1)[0]
+        cleaned = cleaned.strip()
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end > start:
+                return json.loads(cleaned[start : end + 1])
+            raise
 
     def analyze(self, items: List[Item], allow_quote: bool = False) -> Optional[Dict[str, Any]]:
         if not items:
@@ -109,84 +134,88 @@ class Analyzer:
             "X-Title": "AI Slop News Agent",
         }
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            "temperature": 0.4,
-        }
+        url = f"{self.base_url}/chat/completions"
+        candidate_models = [self.model] + self.fallback_models
 
-        try:
-            url = f"{self.base_url}/chat/completions"
-            with httpx.Client(timeout=90.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+        for idx, model_name in enumerate(candidate_models):
+            payload = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                "temperature": 0.4,
+            }
+
+            try:
+                with httpx.Client(timeout=90.0) as client:
+                    res = client.post(url, headers=headers, json=payload)
                 if res.status_code != 200:
-                    print(f"[Analyzer] API Error: {res.status_code} - {res.text}")
-                    return None
+                    print(f"[Analyzer] Model '{model_name}' failed ({res.status_code}): {res.text[:240]}")
+                    if idx + 1 < len(candidate_models):
+                        print(f"[Analyzer] Switching to fallback model '{candidate_models[idx + 1]}'...")
+                    continue
 
                 response_data = res.json()
                 raw_text = response_data["choices"][0]["message"]["content"].strip()
+                parsed = self._parse_json_response(raw_text)
+                if idx > 0:
+                    print(f"[Analyzer] Successfully used fallback model: {model_name}")
+            except Exception as e:
+                print(f"[Analyzer] Model '{model_name}' exception: {e}")
+                if idx + 1 < len(candidate_models):
+                    print(f"[Analyzer] Switching to fallback model '{candidate_models[idx + 1]}'...")
+                continue
 
-                if raw_text.startswith("```"):
-                    raw_text = raw_text.split("\n", 1)[1]
-                    if raw_text.endswith("```"):
-                        raw_text = raw_text.rsplit("```", 1)[0]
-                raw_text = raw_text.strip()
+            # Post-processing: strictly guarantee clean paragraph separation and valid HTML
+            if "telegram_post" in parsed and isinstance(parsed["telegram_post"], str):
+                post = parsed["telegram_post"].strip().replace("\r\n", "\n")
 
-                parsed = json.loads(raw_text)
+                # Convert any markdown bold **text** to <b>text</b>
+                post = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', post)
 
-                # Post-processing: strictly guarantee clean paragraph separation and valid HTML
-                if "telegram_post" in parsed and isinstance(parsed["telegram_post"], str):
-                    post = parsed["telegram_post"].strip().replace("\r\n", "\n")
+                # Deduplicate repeated bold headline tags if model duplicated them
+                post = re.sub(r'^(?:\s*🔥\s*)*(?:<b>\s*)*(?:\s*🔥\s*)*(?:<b>\s*)*', '🔥 <b>', post)
+                post = re.sub(r'</b>\s*</b>', '</b>', post)
 
-                    # Convert any markdown bold **text** to <b>text</b>
-                    post = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', post)
+                # If first line has open <b> without closing </b>, close it at the end of the headline
+                lines = post.split("\n")
+                if lines and '<b>' in lines[0] and '</b>' not in lines[0]:
+                    lines[0] = lines[0] + '</b>'
+                    post = '\n'.join(lines)
 
-                    # Deduplicate repeated bold headline tags if model duplicated them
-                    post = re.sub(r'^(?:\s*🔥\s*)*(?:<b>\s*)*(?:\s*🔥\s*)*(?:<b>\s*)*', '🔥 <b>', post)
-                    post = re.sub(r'</b>\s*</b>', '</b>', post)
+                lines = post.split("\n")
+                # If line 0 (headline) is immediately followed by text on line 1, insert empty line
+                if len(lines) >= 2 and lines[0].strip() and lines[1].strip() and not lines[1].strip().startswith("<blockquote"):
+                    lines.insert(1, "")
+                    post = "\n".join(lines)
 
-                    # If first line has open <b> without closing </b>, close it at the end of the headline
-                    lines = post.split("\n")
-                    if lines and '<b>' in lines[0] and '</b>' not in lines[0]:
-                        lines[0] = lines[0] + '</b>'
-                        post = '\n'.join(lines)
+                # Ensure clear headline at top if first line is a long narrative
+                first_line = post.split("\n", 1)[0].strip()
+                hl = parsed.get("headline", "").strip()
+                plain_first = re.sub(r'<[^>]+>', '', first_line)
+                if hl and hl.lower() not in plain_first.lower() and len(plain_first) > 90 and not first_line.startswith("<") and not first_line.startswith("🔥"):
+                    post = f"🔥 <b>{hl}</b>\n\n{post}"
 
-                    lines = post.split("\n")
-                    # If line 0 (headline) is immediately followed by text on line 1, insert empty line
-                    if len(lines) >= 2 and lines[0].strip() and lines[1].strip() and not lines[1].strip().startswith("<blockquote"):
-                        lines.insert(1, "")
-                        post = "\n".join(lines)
+                # Always strip blockquotes, markdown quotes, and tacked-on developer quote footers
+                post = re.sub(r'<blockquote[^>]*>.*?</blockquote>', '', post, flags=re.S | re.I)
+                post = re.sub(r'^\s*>\s?.*(?:\n|$)', '', post, flags=re.M)
+                post = re.sub(
+                    r'\n*\s*💬\s*(?:<b>)?\s*(?:Цитата\s+разработчиков|Представители\s+[^:\n]+)[^\n]*(?:\n\s*«[^»]*»)?',
+                    '',
+                    post,
+                    flags=re.I,
+                )
 
-                    # Ensure clear headline at top if first line is a long narrative
-                    first_line = post.split("\n", 1)[0].strip()
-                    hl = parsed.get("headline", "").strip()
-                    plain_first = re.sub(r'<[^>]+>', '', first_line)
-                    if hl and hl.lower() not in plain_first.lower() and len(plain_first) > 90 and not first_line.startswith("<") and not first_line.startswith("🔥"):
-                        post = f"🔥 <b>{hl}</b>\n\n{post}"
+                # Normalize excessive newlines
+                post = re.sub(r'\n{3,}', '\n\n', post)
+                parsed["telegram_post"] = post.strip()
 
-                    # Always strip blockquotes, markdown quotes, and tacked-on developer quote footers
-                    post = re.sub(r'<blockquote[^>]*>.*?</blockquote>', '', post, flags=re.S | re.I)
-                    post = re.sub(r'^\s*>\s?.*(?:\n|$)', '', post, flags=re.M)
-                    post = re.sub(
-                        r'\n*\s*💬\s*(?:<b>)?\s*(?:Цитата\s+разработчиков|Представители\s+[^:\n]+)[^\n]*(?:\n\s*«[^»]*»)?',
-                        '',
-                        post,
-                        flags=re.I,
-                    )
+            if "headline" in parsed and isinstance(parsed["headline"], str):
+                hl = re.sub(r'<[^>]+>', '', parsed["headline"])
+                hl = re.sub(r'[*_`]', '', hl)
+                parsed["headline"] = hl.strip()
 
-                    # Normalize excessive newlines
-                    post = re.sub(r'\n{3,}', '\n\n', post)
-                    parsed["telegram_post"] = post.strip()
+            return parsed
 
-                if "headline" in parsed and isinstance(parsed["headline"], str):
-                    hl = re.sub(r'<[^>]+>', '', parsed["headline"])
-                    hl = re.sub(r'[*_`]', '', hl)
-                    parsed["headline"] = hl.strip()
-
-                return parsed
-        except Exception as e:
-            print(f"[Analyzer] Exception during analysis: {e}")
-            return None
+        return None

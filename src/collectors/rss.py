@@ -1,4 +1,5 @@
-"""RSS/Atom feed collector with robust HTTP timeout and User-Agent."""
+"""RSS/Atom feed collector with robust HTTP timeout, retries, and User-Agent."""
+import time
 from typing import List
 import feedparser
 import httpx
@@ -19,14 +20,27 @@ class RSSCollector:
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
         }
-        try:
-            with httpx.Client(timeout=15.0, follow_redirects=True, headers=headers) as client:
-                res = client.get(self.url)
-                if res.status_code != 200:
-                    print(f"[RSSCollector] Failed to fetch {self.url}, status code: {res.status_code}")
-                    return items
-                feed_content = res.text
+        feed_content = None
+        last_error = None
+        for attempt in range(3):
+            try:
+                with httpx.Client(timeout=20.0, follow_redirects=True, headers=headers) as client:
+                    res = client.get(self.url)
+                    if res.status_code != 200:
+                        print(f"[RSSCollector] Failed to fetch {self.url}, status code: {res.status_code}")
+                        return items
+                    feed_content = res.text
+                    break
+            except Exception as e:
+                last_error = e
+                if attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
 
+        if not feed_content:
+            print(f"[RSSCollector] Error fetching {self.url}: {last_error}")
+            return items
+
+        try:
             feed = feedparser.parse(feed_content)
             for entry in feed.entries[:15]:  # Take latest 15 entries
                 title = entry.get("title", "Untitled")

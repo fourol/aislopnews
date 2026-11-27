@@ -81,6 +81,7 @@ def run_pipeline(dry_run: bool = False):
         api_key=config.llm_api_key,
         base_url=config.llm_base_url,
         model=config.llm_model,
+        fallback_models=config.llm_fallback_models,
     )
 
     print(f"Отправка запроса в LLM ({config.llm_model}) для детального разбора...")
