@@ -1,22 +1,15 @@
 """Main entry point for Competitor, Tech & Web3 Intelligence Agent."""
 import argparse
-import re
 import sys
 import time
 from datetime import datetime
-from src.analyzer import Analyzer
+from src.analyzer import Analyzer, is_advertisement
 from src.charts import ChartGenerator
 from src.collectors import RSSCollector, TelegramPreviewCollector, WebPageCollector
 from src.config import load_config
 from src.image_manager import ImageManager
 from src.storage import Storage
 from src.telegram_bot import TelegramPublisher
-
-
-def _contains_blockquote(text: str) -> bool:
-    if re.search(r"<blockquote\b", text, flags=re.IGNORECASE):
-        return True
-    return any(line.lstrip().startswith(">") for line in text.splitlines())
 
 
 def run_pipeline(dry_run: bool = False):
@@ -51,13 +44,31 @@ def run_pipeline(dry_run: bool = False):
 
     print(f"\nВсего добавлено новых материалов: {total_new}")
 
-    # 2. Получение необработанных материалов для анализа
+    # 2. Получение и предфильтрация необработанных материалов (отсев рекламы и пустых постов)
     unprocessed = storage.get_unprocessed_items(limit=config.max_items_per_run)
     if not unprocessed:
         print("Нет новых материалов для анализа. Публикация не требуется.")
         return
 
-    print(f"Готово к анализу через LLM: {len(unprocessed)} материалов.")
+    clean_items = []
+    skipped_items = []
+    for item in unprocessed:
+        if not item.content.strip() or is_advertisement(item.title, item.content):
+            skipped_items.append(item)
+        else:
+            clean_items.append(item)
+
+    if skipped_items:
+        print(f"Отфильтровано рекламы и пустых материалов: {len(skipped_items)} шт.")
+        if not dry_run:
+            skipped_ids = [item.id for item in skipped_items if item.id]
+            storage.mark_items_processed(skipped_ids)
+
+    if not clean_items:
+        print("После фильтрации рекламы нет подходящих новостей для публикации.")
+        return
+
+    print(f"Готово к анализу через LLM: {len(clean_items)} материалов.")
 
     # 3. Анализ через LLM и выбор главного события
     if not config.llm_api_key and not dry_run:
@@ -70,12 +81,8 @@ def run_pipeline(dry_run: bool = False):
         model=config.llm_model,
     )
 
-    recent_texts = storage.get_recent_digest_texts(limit=2)
-    allow_quote = not any(_contains_blockquote(t) for t in recent_texts)
-    print(f"Режим цитат: {'разрешено' if allow_quote else 'запрещено'}")
-
     print(f"Отправка запроса в LLM ({config.llm_model}) для детального разбора...")
-    analysis_result = analyzer.analyze(unprocessed, allow_quote=allow_quote)
+    analysis_result = analyzer.analyze(clean_items, allow_quote=False)
     if not analysis_result:
         print("[Ошибка] Не удалось получить результат анализа от модели.")
         return
@@ -88,7 +95,7 @@ def run_pipeline(dry_run: bool = False):
 
     # 4. Подбор изображения (из оригинального поста, из сети или стильная обложка)
     selected_idx = analysis_result.get("selected_item_index", 1) - 1
-    selected_item = unprocessed[selected_idx] if 0 <= selected_idx < len(unprocessed) else unprocessed[0]
+    selected_item = clean_items[selected_idx] if 0 <= selected_idx < len(clean_items) else clean_items[0]
 
     final_image_path = None
     if selected_item.image_url:
@@ -122,9 +129,9 @@ def run_pipeline(dry_run: bool = False):
         if success:
             print("Пост успешно опубликован в канале!")
             # Помечаем материалы обработанными
-            item_ids = [item.id for item in unprocessed if item.id]
+            item_ids = [item.id for item in clean_items if item.id]
             storage.mark_items_processed(item_ids)
-            storage.record_digest(post_text, final_image_path, len(unprocessed), status="sent")
+            storage.record_digest(post_text, final_image_path, len(clean_items), status="sent")
         else:
             print("[Ошибка] Не удалось опубликовать пост в Telegram. Проверьте токен и доступ бота к каналу.")
 
