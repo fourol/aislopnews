@@ -96,21 +96,25 @@ def run_pipeline(dry_run: bool = False):
     credibility = analysis_result.get("credibility", "")
     image_keyword = analysis_result.get("image_keyword", "")
 
-    # 4. Подбор изображения (из оригинального поста, из сети или стильная обложка)
+    # 4. Подбор изображения (оригинал из источника -> og:image статьи -> фото из сети -> HD обложка)
     selected_idx = analysis_result.get("selected_item_index", 1) - 1
     selected_item = clean_items[selected_idx] if 0 <= selected_idx < len(clean_items) else clean_items[0]
 
     final_image_path = None
     if selected_item.image_url:
-        print(f"Загрузка оригинального фото из Telegram-поста: {selected_item.image_url[:60]}...")
+        print(f"Загрузка оригинального фото из источника: {selected_item.image_url[:70]}...")
         final_image_path = image_mgr.download_image(selected_item.image_url)
+
+    if not final_image_path and selected_item.url:
+        print(f"Поиск og:image на странице статьи: {selected_item.url[:70]}...")
+        final_image_path = image_mgr.extract_article_image(selected_item.url)
 
     if not final_image_path and image_keyword:
         print(f"Поиск релевантной картинки в сети по запросу: '{image_keyword}'...")
         final_image_path = image_mgr.search_web_image(image_keyword)
 
     if not final_image_path:
-        print("Генерация стильной карточки-обложки для поста...")
+        print("Генерация HD-обложки для поста...")
         final_image_path = image_mgr.create_cover_card(headline, topic, credibility)
 
     print(f"Изображение для публикации готово: {final_image_path}")

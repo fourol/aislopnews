@@ -30,6 +30,14 @@ class WebPageCollector:
 
                 soup = BeautifulSoup(response.text, "html.parser")
 
+                og_image = None
+                for attr, val in (("property", "og:image"), ("name", "twitter:image"), ("property", "og:image:url")):
+                    meta = soup.find("meta", attrs={attr: val})
+                    if meta and meta.get("content"):
+                        from urllib.parse import urljoin
+                        og_image = urljoin(self.url, meta["content"].strip())
+                        break
+
                 # Remove scripts, styles
                 for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
                     tag.decompose()
@@ -52,6 +60,7 @@ class WebPageCollector:
                                 source_type="web",
                                 competitor=self.competitor,
                                 content=text[:3000],
+                                image_url=og_image,
                             )
                         )
                 else:
@@ -67,6 +76,11 @@ class WebPageCollector:
                             link = urljoin(self.url, link)
                         text = art.get_text(separator=" ").strip()
                         text = re.sub(r"\s+", " ", text)
+                        img_el = art.find("img", src=True)
+                        art_img = None
+                        if img_el and not img_el["src"].startswith("data:"):
+                            from urllib.parse import urljoin
+                            art_img = urljoin(self.url, img_el["src"].strip())
                         items.append(
                             Item(
                                 url=link,
@@ -75,6 +89,7 @@ class WebPageCollector:
                                 source_type="web",
                                 competitor=self.competitor,
                                 content=text[:2000],
+                                image_url=art_img or og_image,
                             )
                         )
         except Exception as e:
